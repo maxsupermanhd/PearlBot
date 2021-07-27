@@ -386,7 +386,7 @@ func GetMCcredentials() (bot.Auth, error) {
 		if err != nil {
 			return resauth, err
 		}
-		if MSaOld.Token != MSa.Token {
+		if MSaOld.AccessToken != MSa.AccessToken {
 			tocache, err := json.Marshal(MSa)
 			if err != nil {
 				return resauth, err
@@ -467,6 +467,12 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.ID == s.State.User.ID {
 		return
 	}
+	if len(m.Content) < 2 {
+		return
+	}
+	if m.Content[0] != '!' {
+		return
+	}
 	var cmd string
 	var param int
 	n, _ := fmt.Sscanf(m.Content, "!%s %d", &cmd, &param)
@@ -544,14 +550,14 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	if cmd == "activate" || cmd == "trigger" {
 		s.MessageReactionAdd(m.ChannelID, m.ID, "⏳")
-		// mauth, err := GetMCcredentials()
-		// if err != nil {
-		// 	s.ChannelMessageSend(m.ChannelID, "Error auth: "+err.Error())
-		// 	return
-		// }
+		mauth, err := GetMCcredentials()
+		if err != nil {
+			s.ChannelMessageSend(m.ChannelID, "Error auth: "+err.Error())
+			return
+		}
 		McClient = bot.NewClient()
-		// McClient.Auth = mauth
-		McClient.Auth.Name = "PepeTheFrog22"
+		McClient.Auth = mauth
+		// McClient.Auth.Name = "PepeTheFrog22"
 		_ = basic.NewPlayer(McClient, basic.DefaultSettings)
 		basic.EventsListener{
 			GameStart:  onGameStart,
@@ -559,14 +565,14 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			Disconnect: onDisconnect,
 			Death:      onDeath,
 		}.Attach(McClient)
-		err = McClient.JoinServer("minecraft.krasnovas.com")
-		// err = McClient.JoinServer("simplyvanilla.net")
+		// err = McClient.JoinServer("minecraft.krasnovas.com")
+		err = McClient.JoinServer("simplyvanilla.net")
 		if err != nil {
 			s.ChannelMessageSend(m.ChannelID, "Error auth: "+err.Error())
 			return
 		}
-		s.ChannelMessageSend(m.ChannelID, "Logged in as `PepeTheFrog22`")
-		// s.ChannelMessageSend(m.ChannelID, "Logged in as `"+mauth.Name+"` (`"+mauth.UUID+"`)")
+		// s.ChannelMessageSend(m.ChannelID, "Logged in as `PepeTheFrog22`")
+		s.ChannelMessageSend(m.ChannelID, "Logged in as `"+mauth.Name+"` (`"+mauth.UUID+"`)")
 		go McClient.HandleGame()
 		go ActivateTrapdoor(pk.Position{X: x, Y: y, Z: z})
 		return
