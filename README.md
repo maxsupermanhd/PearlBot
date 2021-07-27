@@ -1,0 +1,1 @@
+`sudo apt install libwebkit2gtk-4.0-dev libgtk-3-dev` before `go get github.com/webview/webview`
