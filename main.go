@@ -555,26 +555,54 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			s.ChannelMessageSend(m.ChannelID, "Error auth: "+err.Error())
 			return
 		}
+		s.ChannelMessageSend(m.ChannelID, "Authenticated as `"+mauth.Name+"` (`"+mauth.UUID+"`)")
 		McClient = bot.NewClient()
 		McClient.Auth = mauth
-		// McClient.Auth.Name = "PepeTheFrog22"
-		_ = basic.NewPlayer(McClient, basic.DefaultSettings)
+		_ = basic.NewPlayer(McClient, basic.Settings{Locale: "en_US"})
 		basic.EventsListener{
-			GameStart:  onGameStart,
-			ChatMsg:    onChatMsg,
-			Disconnect: onDisconnect,
-			Death:      onDeath,
+			GameStart: nil,
+			ChatMsg:   nil,
+			Disconnect: func(c chat.Message) error {
+				s.ChannelMessageSend(m.ChannelID, "I got disconnected for this reason: "+c.ClearString())
+				return nil
+			},
+			Death: func() error {
+				s.ChannelMessageSend(m.ChannelID, "Yo wtf I died!")
+				return nil
+			},
 		}.Attach(McClient)
-		// err = McClient.JoinServer("minecraft.krasnovas.com")
 		err = McClient.JoinServer("simplyvanilla.net")
 		if err != nil {
 			s.ChannelMessageSend(m.ChannelID, "Error auth: "+err.Error())
 			return
 		}
-		// s.ChannelMessageSend(m.ChannelID, "Logged in as `PepeTheFrog22`")
-		s.ChannelMessageSend(m.ChannelID, "Logged in as `"+mauth.Name+"` (`"+mauth.UUID+"`)")
+		s.ChannelMessageSend(m.ChannelID, "Logged in")
 		go McClient.HandleGame()
-		go ActivateTrapdoor(pk.Position{X: x, Y: y, Z: z})
+
+		time.Sleep(1 * time.Second)
+		// McClient.Conn.WritePacket(pk.Marshal(
+		// 	0x14,
+		// 	pk.Float(-106.0), //cursor x
+		// 	pk.Float(34.0),   //y
+		// 	pk.Boolean(true), //on ground
+		// ))
+		McClient.Conn.WritePacket(pk.Marshal(
+			packetid.BlockPlace,
+			pk.VarInt(0), //hand
+			pk.Position(pk.Position{X: x, Y: y, Z: z}), //((int64(x)&0x3FFFFFF)<<38)|((int64(z)&0x3FFFFFF)<<12)|(int64(y)&0xFFF)), //position
+			pk.VarInt(4),      //direction
+			pk.Float(0.836),   //cursor x
+			pk.Float(0.187),   //y
+			pk.Float(0.5),     //z
+			pk.Boolean(false), //inside
+		))
+		McClient.Conn.WritePacket(pk.Marshal(
+			packetid.ArmAnimation,
+			pk.VarInt(0), //hand
+		))
+		s.ChannelMessageSend(m.ChannelID, "Activated.")
+		time.Sleep(400 * time.Millisecond)
+		McClient.Close()
 		return
 	} else if cmd == "show" {
 		msg := fmt.Sprintf("Chamber %d registered at X%d Y%d Z%d", selected.Index, selected.X, selected.Y, selected.Z)
