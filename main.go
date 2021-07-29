@@ -90,6 +90,106 @@ func CheckRefreshMS(auth *MSauth) error {
 	return nil
 }
 
+func AuthMSdevice() (MSauth, error) {
+	var auth MSauth
+	DeviceResp, err := http.PostForm("https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode", url.Values{
+		"client_id": {os.Getenv("AzureClientID")},
+		"scope":     {`XboxLive.signin offline_access`},
+	})
+	if err != nil {
+		return auth, err
+	}
+	var DeviceRes map[string]interface{}
+	json.NewDecoder(DeviceResp.Body).Decode(&DeviceRes)
+	DeviceResp.Body.Close()
+	if DeviceResp.StatusCode != 200 {
+		return auth, fmt.Errorf("MS answered not HTTP200! Instead got %s and following json: %#v", DeviceResp.Status, DeviceRes)
+	}
+	DeviceCode, ok := DeviceRes["device_code"].(string)
+	if !ok {
+		return auth, errors.New("Device code not found in response")
+	}
+	UserCode, ok := DeviceRes["user_code"].(string)
+	if !ok {
+		return auth, errors.New("User code not found in response")
+	}
+	log.Print("User code: ", UserCode)
+	VerificationURI, ok := DeviceRes["verification_uri"].(string)
+	if !ok {
+		return auth, errors.New("Verification URI not found in response")
+	}
+	log.Print("Verification URI: ", VerificationURI)
+	ExpiresIn, ok := DeviceRes["expires_in"].(float64)
+	if !ok {
+		return auth, errors.New("Expires In not found in response")
+	}
+	log.Print("Expires in: ", ExpiresIn, " seconds")
+	PoolInterval, ok := DeviceRes["interval"].(float64)
+	if !ok {
+		return auth, errors.New("Pooling interval not found in response")
+	}
+	UserMessage, ok := DeviceRes["message"].(string)
+	if !ok {
+		return auth, errors.New("Pooling interval not found in response")
+	}
+	log.Println(UserMessage)
+	time.Sleep(4 * time.Second)
+
+	for {
+		time.Sleep(time.Duration(int(PoolInterval)+1) * time.Second)
+		CodeResp, err := http.PostForm("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", url.Values{
+			"client_id":   {os.Getenv("AzureClientID")},
+			"scope":       {"XboxLive.signin offline_access"},
+			"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
+			"device_code": {DeviceCode},
+		})
+		if err != nil {
+			return auth, err
+		}
+		var CodeRes map[string]interface{}
+		json.NewDecoder(CodeResp.Body).Decode(&CodeRes)
+		CodeResp.Body.Close()
+		if CodeResp.StatusCode == 400 {
+			PoolError, ok := CodeRes["error"].(string)
+			if !ok {
+				return auth, fmt.Errorf("While pooling token got this unknown json: %#v", CodeRes)
+			}
+			if PoolError == "authorization_pending" {
+				continue
+			}
+			if PoolError == "authorization_declined" {
+				return auth, errors.New("User declined authorization")
+			}
+			if PoolError == "expired_token" {
+				return auth, errors.New("Turns out " + strconv.Itoa(int(PoolInterval)) + " seconds is not enough to authorize user, go faster ma monkey")
+			}
+			if PoolError == "invalid_grant" {
+				return auth, errors.New("While pooling token got invalid_grant error: " + CodeRes["error_description"].(string))
+			}
+		} else if CodeResp.StatusCode == 200 {
+			MSaccessToken, ok := CodeRes["access_token"].(string)
+			if !ok {
+				return auth, errors.New("Access token not found in response")
+			}
+			auth.AccessToken = MSaccessToken
+			MSrefreshToken, ok := CodeRes["refresh_token"].(string)
+			if !ok {
+				return auth, errors.New("Refresh token not found in response")
+			}
+			auth.RefreshToken = MSrefreshToken
+			MSexpireSeconds, ok := CodeRes["expires_in"].(float64)
+			if !ok {
+				return auth, errors.New("Expires in not found in response")
+			}
+			auth.ExpiresAfter = time.Now().Unix() + int64(MSexpireSeconds)
+			return auth, nil
+		} else {
+			return auth, fmt.Errorf("MS answered not HTTP200! Instead got %s and following json: %#v", CodeResp.Status, CodeRes)
+		}
+	}
+
+}
+
 func AuthMS(code string) (MSauth, error) {
 	var auth MSauth
 	MSdata := url.Values{
@@ -352,9 +452,7 @@ func GetMCcredentials() (bot.Auth, error) {
 	var resauth bot.Auth
 	var MSa MSauth
 	if _, err := os.Stat(CacheFilename); os.IsNotExist(err) {
-		code := WebViewShitAuth()
-		var err error
-		MSa, err = AuthMS(code)
+		MSa, err := AuthMSdevice()
 		if err != nil {
 			return resauth, err
 		}
