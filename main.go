@@ -452,7 +452,8 @@ func GetMCcredentials() (bot.Auth, error) {
 	var resauth bot.Auth
 	var MSa MSauth
 	if _, err := os.Stat(CacheFilename); os.IsNotExist(err) {
-		MSa, err := AuthMSdevice()
+		var err error
+		MSa, err = AuthMSdevice()
 		if err != nil {
 			return resauth, err
 		}
