@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/joho/godotenv v1.4.0
-	github.com/maxsupermanhd/go-mc-ms-auth v0.0.0-20211219200017-19507a05285a
+	github.com/maxsupermanhd/go-mc-ms-auth v0.0.0-20220116000032-2f2cb566788f
 	golang.org/x/crypto v0.0.0-20220112180741-5e0467b6c7ce // indirect
 	golang.org/x/sys v0.0.0-20220114195835-da31bd327af9 // indirect
 )

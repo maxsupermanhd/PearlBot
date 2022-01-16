@@ -165,7 +165,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 				return nil
 			},
 		}.Attach(mcClient)
-		err = mcClient.JoinServer("simplyvanilla.net")
+		err = mcClient.JoinServer(os.Getenv("SERVERIP"))
 		if err != nil {
 			s.ChannelMessageSend(m.ChannelID, "Error auth: "+err.Error())
 			return
