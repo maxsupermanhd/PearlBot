@@ -18,3 +18,5 @@ PearlBot
 chambers.lol
 .env
 auth.cache
+accounts
+config.json

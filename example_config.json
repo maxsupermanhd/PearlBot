@@ -1,0 +1,34 @@
+{
+	"removeUnmet": false,
+	"removeIgnore": [
+		"343418440423309314"
+	],
+	"rooms": [
+		{
+			"chambers": [
+				{
+					"index": 0,
+					"x": 10,
+					"y": 20,
+					"z": 30
+				},
+				{
+					"index": 1,
+					"x": 11,
+					"y": 20,
+					"z": 30
+				}
+			],
+			"accountOwnerDiscordId": "280979626682089483",
+			"accountCredentialsName": "jengos_alt_1.json",
+			"discordChannel": "938562443016298576",
+			"roomName": "Alpha",
+			"serverAdress": "test.2b2t.org"
+		}
+	],
+	"discordToken": "bot token here",
+	"discordServiceChannel": "",
+	"accountsCredentialsCachePath": "./accounts/",
+	"microsoftCID": "88650e7e-efee-4857-b9a9-cf580a00ef43",
+	"guildID": "938065492114042961"
+}
