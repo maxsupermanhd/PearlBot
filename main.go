@@ -80,6 +80,24 @@ var (
 				},
 			},
 		},
+		{
+			Name:        "activate",
+			Description: "Activate stasis",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "chamber",
+					Description: "Selected stasis",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "room",
+					Description: "Selected room",
+					Required:    false,
+				},
+			},
+		},
 	}
 	commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
 		"help":     commandHelp,
@@ -194,7 +212,7 @@ func commandRooms(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 func commandActivate(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	rooms := findRoomsByChannelID(i.ChannelID)
-	var chambernum int
+	chambernum := int(i.ApplicationCommandData().Options[0].IntValue())
 	var room PearlRoom
 	if len(rooms) <= 0 {
 		iTextResponse(s, i, "Channel does not have any rooms attached")
@@ -203,7 +221,11 @@ func commandActivate(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if len(rooms) == 1 {
 		room = rooms[0]
 	} else {
-		var roomname string
+		if len(i.ApplicationCommandData().Options) < 2 {
+			iTextResponse(s, i, "Channel have more than one room attached, please specify room name")
+			return
+		}
+		roomname := i.ApplicationCommandData().Options[1].StringValue()
 		roomfound := false
 		for _, r := range rooms {
 			if r.RoomName == roomname {
