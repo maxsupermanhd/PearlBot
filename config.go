@@ -10,10 +10,8 @@ import (
 )
 
 type Chamber struct {
-	Index int `json:"index"`
-	X     int `json:"x"`
-	Y     int `json:"y"`
-	Z     int `json:"z"`
+	Index int       `json:"index"`
+	Pos   []float64 `json:"pos"`
 }
 type PearlRoom struct {
 	Chambers               []Chamber `json:"chambers"`
@@ -22,6 +20,7 @@ type PearlRoom struct {
 	DiscordChannel         string    `json:"discordChannel"`
 	RoomName               string    `json:"roomName"`
 	ServerAdress           string    `json:"serverAdress"`
+	BotPos                 []float64 `json:"botPos"`
 }
 type BotConfiguration struct {
 	RemoveUnmetMessages         bool        `json:"removeUnmet"`
@@ -32,6 +31,9 @@ type BotConfiguration struct {
 	AccountsCredentialCachePath string      `json:"accountsCredentialsCachePath"`
 	MicrosoftCID                string      `json:"microsoftCID"`
 	GuildID                     string      `json:"guildID"`
+	StatusQueryRegion1          string      `json:"statusRegion1"`
+	StatusQueryRegion2          string      `json:"statusRegion2"`
+	ReInitCommands              bool        `json:"reinitCommands"`
 }
 
 var (
@@ -87,6 +89,9 @@ func verifyConfig() error {
 		}
 		if c.RoomName == "" && sharedChannel {
 			return fmt.Errorf("empty pearl room name assigned to shared channel")
+		}
+		if len(c.BotPos) != 3 {
+			return fmt.Errorf("bot position is not 3 floats")
 		}
 	}
 	return nil

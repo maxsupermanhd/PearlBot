@@ -117,14 +117,14 @@ func commandAuthCheck(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 		return
 	}
-	resp := fmt.Sprintf("Registered rooms in this channel: %d", len(rooms))
+	resp := fmt.Sprintf("Registered rooms in this channel: %d\n", len(rooms))
 	for i, r := range rooms {
 		username, err := checkCredentialsValid(r.AccountCredentialsName)
 		username = usernameBeautify(username)
 		if err == nil {
-			resp += fmt.Sprintf("[%d] `%s` - account %s's credentials are active and cached", i, r.RoomName, username)
+			resp += fmt.Sprintf("[%d] `%s` - account %s's credentials are active and cached\n", i, r.RoomName, username)
 		} else {
-			resp += fmt.Sprintf("[%d] `%s` - account %s: %s", i, r.RoomName, username, err.Error())
+			resp += fmt.Sprintf("[%d] `%s` - account %s: %s\n", i, r.RoomName, username, err.Error())
 		}
 	}
 	iTextResponse(s, i, resp)
@@ -151,11 +151,11 @@ func commandAuthRefresh(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if len(rooms) == 1 {
 		room = rooms[0]
 	} else {
-		if len(i.ApplicationCommandData().Options) < 2 {
-			iTextResponse(s, i, "Auth refresh command requires room name")
+		if len(i.ApplicationCommandData().Options[0].Options) < 1 {
+			iTextResponse(s, i, "Multiple rooms registered, specify room name")
 			return
 		}
-		roomname := i.ApplicationCommandData().Options[0].StringValue()
+		roomname := i.ApplicationCommandData().Options[0].Options[0].StringValue()
 		roomfound := false
 		for _, r := range rooms {
 			if r.RoomName == roomname {
@@ -257,11 +257,11 @@ func commandAuthNew(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if len(rooms) == 1 {
 		room = rooms[0]
 	} else {
-		if len(i.ApplicationCommandData().Options) < 2 {
-			iTextResponse(s, i, "Auth refresh command requires room name")
+		if len(i.ApplicationCommandData().Options[0].Options) < 1 {
+			iTextResponse(s, i, "Multiple rooms registered, specify room name")
 			return
 		}
-		roomname := i.ApplicationCommandData().Options[0].StringValue()
+		roomname := i.ApplicationCommandData().Options[0].Options[0].StringValue()
 		roomfound := false
 		for _, r := range rooms {
 			if r.RoomName == roomname {
@@ -433,6 +433,7 @@ func commandAuthNew(s *discordgo.Session, i *discordgo.InteractionCreate) {
 }
 
 func commandAuth(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// spew.Dump(i.ApplicationCommandData().Options)
 	cmd := i.ApplicationCommandData().Options[0].Name
 	if cmd == "check" {
 		commandAuthCheck(s, i)

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"os/signal"
 	"syscall"
@@ -85,7 +86,7 @@ var (
 			Description: "Activate stasis",
 			Options: []*discordgo.ApplicationCommandOption{
 				{
-					Type:        discordgo.ApplicationCommandOptionString,
+					Type:        discordgo.ApplicationCommandOptionInteger,
 					Name:        "chamber",
 					Description: "Selected stasis",
 					Required:    true,
@@ -98,6 +99,14 @@ var (
 				},
 			},
 		},
+		// {
+		// 	Name:        "status",
+		// 	Description: "Spew out facts",
+		// },
+		// {
+		// 	Name:        "bots",
+		// 	Description: "Check out bots that are online",
+		// },
 	}
 	commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
 		"help":     commandHelp,
@@ -105,7 +114,10 @@ var (
 		"rooms":    commandRooms,
 		"auth":     commandAuth,
 		"activate": commandActivate,
+		// "status":   commandStatus,
+		// "bots":     commandBots,
 	}
+	// botsOnline = []bot.Client{}
 )
 
 func main() {
@@ -122,7 +134,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error verifying config: %s", err.Error())
 	}
-
+	log.Print("Connecting to Discord...")
 	dg, err := discordgo.New("Bot " + config.DiscordToken)
 	if err != nil {
 		log.Println("error creating Discord session,", err)
@@ -135,24 +147,51 @@ func main() {
 		log.Println("error opening connection,", err)
 		return
 	}
-	dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-		if h, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
-			h(s, i)
-		}
-	})
-	for _, v := range commands {
-		_, err := dg.ApplicationCommandCreate(dg.State.User.ID, config.GuildID, v)
+	defer dg.Close()
+	log.Print("Connected to Discord.")
+	if config.ReInitCommands {
+		log.Print("Removing old commands...")
+		cmds, err := dg.ApplicationCommands("859904924699721769", "")
 		if err != nil {
-			log.Panicf("Cannot create '%v' command: %v", v.Name, err)
+			log.Fatalf("Failed to get app commands: %s", err.Error())
 		}
+		for _, j := range cmds {
+			dg.ApplicationCommandDelete(j.ApplicationID, "", j.ID)
+		}
+		cmds, err = dg.ApplicationCommands("859904924699721769", config.GuildID)
+		if err != nil {
+			log.Fatalf("Failed to get app commands: %s", err.Error())
+		}
+		for _, j := range cmds {
+			err := dg.ApplicationCommandDelete(j.ApplicationID, config.GuildID, j.ID)
+			if err != nil {
+				log.Printf("Failed to delete old command %s", j.ID)
+			}
+		}
+		log.Print("Registering new commands...")
+		dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			if h, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
+				h(s, i)
+			}
+		})
+		for _, v := range commands {
+			_, err := dg.ApplicationCommandCreate(dg.State.User.ID, config.GuildID, v)
+			if err != nil {
+				log.Panicf("Cannot create '%v' command: %v", v.Name, err)
+			}
+		}
+	} else {
+		dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			if h, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
+				h(s, i)
+			}
+		})
 	}
 	log.Println("Bot is now running. Send SIGINT or SIGTERM to exit.")
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
 	log.Println("Roger, stopping shit.")
-	dg.Close()
-	log.Println("Discord quit, exiting...")
 }
 
 func commandHelp(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -193,11 +232,11 @@ func commandRooms(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		iTextResponse(s, i, fmt.Sprintf("Room named `%s` with `%s` as activator", rooms[0].RoomName, username))
 		return
 	}
-	resp := fmt.Sprintf("Registered rooms in this channel: %d", len(rooms))
-	for i, r := range rooms {
+	resp := fmt.Sprintf("Registered rooms in this channel: %d\n", len(rooms))
+	for _, r := range rooms {
 		username, _ := checkCredentialsValid(r.AccountCredentialsName)
 		username = usernameBeautify(username)
-		resp += fmt.Sprintf("\n[%d] `%s` with %d chambers and `%s` as activator (provided by <@%s>)", i, r.RoomName, len(r.Chambers), username, r.AccountOwner)
+		resp += fmt.Sprintf("`%s` with %d chambers and `%s` as activator (provided by <@%s>)\n", r.RoomName, len(r.Chambers), username, r.AccountOwner)
 	}
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -239,16 +278,24 @@ func commandActivate(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 	}
 	chamberfound := false
-	for _, c := range room.Chambers {
-		if c.Index == chambernum {
-			chamberfound = true
-			break
+	chamberindex := 0
+	if chambernum == -1 {
+		chamberfound = true
+		chamberindex = -1
+	} else {
+		for index, c := range room.Chambers {
+			if c.Index == chambernum {
+				chamberfound = true
+				chamberindex = index
+				break
+			}
+		}
+		if !chamberfound {
+			iTextResponse(s, i, fmt.Sprintf("Chamber %d in room %s not found", chambernum, room.RoomName))
+			return
 		}
 	}
-	if !chamberfound {
-		iTextResponse(s, i, fmt.Sprintf("Chamber %d in room %s not found", chambernum, room.RoomName))
-		return
-	}
+	iTextResponse(s, i, fmt.Sprintf("Activating chamber %d in room %s...", chambernum, room.RoomName))
 	cache, err := getCredentialsCache(room.AccountCredentialsName)
 	if err != nil {
 		iTextResponse(s, i, "Failed to load credentials: "+err.Error())
@@ -289,16 +336,118 @@ func commandActivate(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			return
 		}
 	}
-	triggerChamber(s, room, chambernum, bot.Auth{Name: cache.Username, UUID: cache.UUID, AsTk: cache.Minecraft.Token})
+	triggerChamber(s, room, chamberindex, bot.Auth{Name: cache.Username, UUID: cache.UUID, AsTk: cache.Minecraft.Token})
+}
+
+func getPitchYaw(x0, y0, z0, x, y, z float64) (pitch, yaw float64) {
+	dx := x - x0
+	dy := y - y0
+	dz := z - z0
+	r := math.Sqrt(dx*dx + dy*dy + dz*dz)
+	yaw = -math.Atan2(dx, dz) / math.Pi * 180
+	if yaw < 0 {
+		yaw = 360 + yaw
+	}
+	pitch = -math.Asin(dy/r) / math.Pi * 180
+	return
+}
+
+func sendActivation(mcClient bot.Client, room PearlRoom, cid int) {
+	blockCastPos := []float64{0.0, room.Chambers[cid].Pos[1] + 0.5, 0.0}
+	if room.BotPos[0] < room.Chambers[cid].Pos[0] {
+		blockCastPos[0] = room.Chambers[cid].Pos[0] - 0.5
+	} else {
+		blockCastPos[0] = room.Chambers[cid].Pos[0] + 0.5
+	}
+	if room.BotPos[2] < room.Chambers[cid].Pos[2] {
+		blockCastPos[2] = room.Chambers[cid].Pos[2] + 0.5
+	} else {
+		blockCastPos[2] = room.Chambers[cid].Pos[2] - 0.5
+	}
+	_, yaw := getPitchYaw(room.BotPos[0], room.BotPos[1], room.BotPos[2],
+		blockCastPos[0], blockCastPos[1], blockCastPos[2])
+	mcClient.Conn.WritePacket(pk.Marshal(
+		packetid.ServerboundMovePlayerRot,
+		pk.Float(yaw),
+		pk.Float(19.2),
+		pk.Boolean(true),
+	))
+	cursorX := 0.0
+	cursorZ := 0.0
+	blockFace := 0
+	if yaw > 315 || yaw < 45 {
+		// facing south
+		cursorX = 0.5
+		cursorZ = 0.875
+		blockFace = 2
+	}
+	if yaw > 45 && yaw < 135 {
+		// facing west
+		cursorX = 0.125
+		cursorZ = 0.5
+		blockFace = 5
+	}
+	if yaw > 135 && yaw < 225 {
+		// facing north
+		cursorX = 0.5
+		cursorZ = 0.125
+		blockFace = 3
+	}
+	if yaw > 225 && yaw < 315 {
+		// facing east
+		cursorX = 0.875
+		cursorZ = 0.5
+		blockFace = 4
+	}
+	time.Sleep(100 * time.Millisecond)
+	log.Printf("yaw %.0f cursor %.2f %.2f block %.1f %.1f %.1f", yaw, cursorX, cursorZ, blockCastPos[0], blockCastPos[1], blockCastPos[2])
+	log.Print(pk.Position{X: int(room.Chambers[cid].Pos[0]), Y: int(room.Chambers[cid].Pos[1]), Z: int(room.Chambers[cid].Pos[2])})
+	mcClient.Conn.WritePacket(pk.Marshal(
+		packetid.ServerboundUseItemOn,
+		pk.VarInt(0), //hand
+		pk.Position(pk.Position{X: int(room.Chambers[cid].Pos[0]), Y: int(room.Chambers[cid].Pos[1]), Z: int(room.Chambers[cid].Pos[2])}), //((int64(x)&0x3FFFFFF)<<38)|((int64(z)&0x3FFFFFF)<<12)|(int64(y)&0xFFF)), //position
+		pk.VarInt(blockFace), //direction
+		pk.Float(cursorX),    //cursor x
+		pk.Float(0.125),      //y
+		pk.Float(cursorZ),    //z
+		pk.Boolean(true),     //inside
+	))
+	mcClient.Conn.WritePacket(pk.Marshal(
+		packetid.ServerboundSwing,
+		pk.VarInt(0), //hand
+	))
 }
 
 func triggerChamber(s *discordgo.Session, room PearlRoom, cid int, auth bot.Auth) {
 	mcClient := bot.NewClient()
 	mcClient.Auth = auth
-	_ = basic.NewPlayer(mcClient, basic.Settings{Locale: "en_US"})
+	mcPlayer := basic.NewPlayer(mcClient, basic.Settings{Locale: "en_US"})
+	activateRoutine := func() {
+		s.ChannelMessageSend(room.DiscordChannel, fmt.Sprintf("Logged in (%d), activating...", mcPlayer.Gamemode))
+		time.Sleep(500 * time.Millisecond)
+		if cid == -1 {
+			for c := range room.Chambers {
+				sendActivation(*mcClient, room, c)
+				time.Sleep(500 * time.Millisecond)
+			}
+		} else {
+			sendActivation(*mcClient, room, cid)
+		}
+		s.ChannelMessageSend(room.DiscordChannel, "Activated.")
+		time.Sleep(400 * time.Millisecond)
+		mcClient.Close()
+	}
 	basic.EventsListener{
-		GameStart: nil,
-		ChatMsg:   nil,
+		GameStart: func() error {
+			if mcPlayer.WorldInfo.HashedSeed == -4189754411863869379 {
+				return nil
+			}
+			if mcPlayer.Gamemode == 0 {
+				go activateRoutine()
+			}
+			return nil
+		},
+		ChatMsg: nil,
 		Disconnect: func(c chat.Message) error {
 			s.ChannelMessageSend(room.DiscordChannel, "I got disconnected for this reason: "+c.ClearString())
 			return nil
@@ -313,31 +462,15 @@ func triggerChamber(s *discordgo.Session, room PearlRoom, cid int, auth bot.Auth
 		s.ChannelMessageSend(room.DiscordChannel, "Error auth: "+err.Error())
 		return
 	}
-	s.ChannelMessageSend(room.DiscordChannel, "Logged in")
 	go mcClient.HandleGame()
+	time.Sleep(10000 * time.Millisecond)
+	mcClient.Close()
 
-	time.Sleep(1 * time.Second)
 	// mcClient.Conn.WritePacket(pk.Marshal(
 	// 	0x14,
 	// 	pk.Float(-106.0), //cursor x
 	// 	pk.Float(34.0),   //y
 	// 	pk.Boolean(true), //on ground
 	// ))
-	mcClient.Conn.WritePacket(pk.Marshal(
-		packetid.ServerboundUseItemOn,
-		pk.VarInt(0), //hand
-		pk.Position(pk.Position{X: room.Chambers[cid].X, Y: room.Chambers[cid].Y, Z: room.Chambers[cid].Z}), //((int64(x)&0x3FFFFFF)<<38)|((int64(z)&0x3FFFFFF)<<12)|(int64(y)&0xFFF)), //position
-		pk.VarInt(4),      //direction
-		pk.Float(0.836),   //cursor x
-		pk.Float(0.187),   //y
-		pk.Float(0.5),     //z
-		pk.Boolean(false), //inside
-	))
-	mcClient.Conn.WritePacket(pk.Marshal(
-		packetid.ServerboundSwing,
-		pk.VarInt(0), //hand
-	))
-	s.ChannelMessageSend(room.DiscordChannel, "Activated.")
-	time.Sleep(400 * time.Millisecond)
-	mcClient.Close()
+
 }
