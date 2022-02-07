@@ -118,7 +118,14 @@ var (
 		// "bots":     commandBots,
 	}
 	// botsOnline = []bot.Client{}
+	dangerousActivations = map[string]activationRequest{}
 )
+
+type activationRequest struct {
+	when     time.Time
+	roomname string
+	byUser   string
+}
 
 func main() {
 	log.Println("Loading config...")
@@ -134,13 +141,21 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error verifying config: %s", err.Error())
 	}
+	go func() {
+		for k, v := range dangerousActivations {
+			if time.Until(v.when) < -120*time.Second {
+				delete(dangerousActivations, k)
+			}
+		}
+		time.Sleep(120 * time.Second)
+	}()
 	log.Print("Connecting to Discord...")
 	dg, err := discordgo.New("Bot " + config.DiscordToken)
 	if err != nil {
 		log.Println("error creating Discord session,", err)
 		return
 	}
-	// dg.AddHandler(messageCreate)
+	dg.AddHandler(messageCreate)
 	dg.Identify.Intents = discordgo.IntentsGuildMessages
 	err = dg.Open()
 	if err != nil {
@@ -249,6 +264,39 @@ func commandRooms(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	})
 }
 
+func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if m.Content != "Yes I am sure, do as I say!" {
+		return
+	}
+	if t, ok := dangerousActivations[m.ChannelID]; ok {
+		if t.byUser == m.Author.ID {
+			if time.Until(t.when) < -15*time.Second {
+				s.ChannelMessageSend(m.ChannelID, "You did not confirmed activation fast enough.")
+				delete(dangerousActivations, m.ChannelID)
+				return
+			} else {
+				rooms := findRoomsByChannelID(m.ChannelID)
+				roomfound := false
+				var room PearlRoom
+				for _, r := range rooms {
+					if r.RoomName == t.roomname {
+						room = r
+						roomfound = true
+					}
+				}
+				if !roomfound {
+					s.ChannelMessageSend(m.ChannelID, "Room not found?!")
+					delete(dangerousActivations, m.ChannelID)
+					return
+				}
+				activateRoom(s, room, -1)
+			}
+		} else {
+			return
+		}
+	}
+}
+
 func commandActivate(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	rooms := findRoomsByChannelID(i.ChannelID)
 	chambernum := int(i.ApplicationCommandData().Options[0].IntValue())
@@ -282,6 +330,31 @@ func commandActivate(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if chambernum == -1 {
 		chamberfound = true
 		chamberindex = -1
+		if t, ok := dangerousActivations[i.ChannelID]; ok {
+			if t.byUser == i.Member.User.ID {
+				iTextResponse(s, i, "Activation confirmation awaiting")
+				return
+			} else {
+				iTextResponse(s, i, "Other member already requested activation of everything, wait until he confirms it.")
+				return
+			}
+		} else {
+			dangerousActivations[i.ChannelID] = activationRequest{
+				when:     time.Now(),
+				byUser:   i.Member.User.ID,
+				roomname: room.RoomName,
+			}
+			s.ChannelMessageSendComplex(i.ChannelID, &discordgo.MessageSend{
+				Content: "",
+				Embeds: []*discordgo.MessageEmbed{
+					{
+						Title:       "Warning!",
+						Description: "This action will activate **all** chambers in the room!\nRespond with `Yes I am sure, do as I say!` in this channel within 15 seconds to confirm",
+						Color:       0xef2929,
+					},
+				},
+			})
+		}
 	} else {
 		for index, c := range room.Chambers {
 			if c.Index == chambernum {
@@ -295,48 +368,52 @@ func commandActivate(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			return
 		}
 	}
-	iTextResponse(s, i, fmt.Sprintf("Activating chamber %d in room %s...", chambernum, room.RoomName))
+	activateRoom(s, room, chamberindex)
+}
+
+func activateRoom(s *discordgo.Session, room PearlRoom, cid int) {
+	s.ChannelMessageSend(room.DiscordChannel, fmt.Sprintf("Activating chamber %d in room %s...", cid, room.RoomName))
 	cache, err := getCredentialsCache(room.AccountCredentialsName)
 	if err != nil {
-		iTextResponse(s, i, "Failed to load credentials: "+err.Error())
+		s.ChannelMessageSend(room.DiscordChannel, "Failed to load credentials: "+err.Error())
 		return
 	}
 	if isDateExpired(cache.Minecraft.ExpiresAfter) {
-		iTextResponse(s, i, "Minecraft token expired, refreshing everything...")
+		s.ChannelMessageSend(room.DiscordChannel, "Minecraft token expired, refreshing everything...")
 		err := GMMAuth.CheckRefreshMS(&cache.Microsoft, config.MicrosoftCID)
 		if err != nil {
-			iTextResponse(s, i, "Failed to refresh Microsoft credentials: "+err.Error())
+			s.ChannelMessageSend(room.DiscordChannel, "Failed to refresh Microsoft credentials: "+err.Error())
 			return
 		}
 		XBLt, err := GMMAuth.AuthXBL(cache.Microsoft.AccessToken)
 		if err != nil {
-			iTextResponse(s, i, "Failed to refresh credentials, unable to get XBL token: "+err.Error())
+			s.ChannelMessageSend(room.DiscordChannel, "Failed to refresh credentials, unable to get XBL token: "+err.Error())
 			return
 		}
 		XSTSt, err := GMMAuth.AuthXSTS(XBLt)
 		if err != nil {
-			iTextResponse(s, i, "Failed to refresh credentials, unable to get XSTS token: "+err.Error())
+			s.ChannelMessageSend(room.DiscordChannel, "Failed to refresh credentials, unable to get XSTS token: "+err.Error())
 			return
 		}
 		cache.Minecraft, err = GMMAuth.AuthMC(XSTSt)
 		if err != nil {
-			iTextResponse(s, i, "Failed to refresh credentials, unable to get MC token: "+err.Error())
+			s.ChannelMessageSend(room.DiscordChannel, "Failed to refresh credentials, unable to get MC token: "+err.Error())
 			return
 		}
 		profile, err := GMMAuth.GetMCprofile(cache.Minecraft.Token)
 		if err != nil {
-			iTextResponse(s, i, "Unable to get MC profile: "+err.Error())
+			s.ChannelMessageSend(room.DiscordChannel, "Unable to get MC profile: "+err.Error())
 			return
 		}
 		cache.Username = profile.Name
 		cache.UUID = profile.UUID
 		err = writeCredentialsCache(room.AccountCredentialsName, cache)
 		if err != nil {
-			iTextResponse(s, i, "Unable to write credentials cache: "+err.Error())
+			s.ChannelMessageSend(room.DiscordChannel, "Unable to write credentials cache: "+err.Error())
 			return
 		}
 	}
-	triggerChamber(s, room, chamberindex, bot.Auth{Name: cache.Username, UUID: cache.UUID, AsTk: cache.Minecraft.Token})
+	triggerChamber(s, room, cid, bot.Auth{Name: cache.Username, UUID: cache.UUID, AsTk: cache.Minecraft.Token})
 }
 
 func getPitchYaw(x0, y0, z0, x, y, z float64) (pitch, yaw float64) {
