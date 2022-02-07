@@ -333,27 +333,32 @@ func commandActivate(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if t, ok := dangerousActivations[i.ChannelID]; ok {
 			if t.byUser == i.Member.User.ID {
 				iTextResponse(s, i, "Activation confirmation awaiting")
-				return
 			} else {
 				iTextResponse(s, i, "Other member already requested activation of everything, wait until he confirms it.")
-				return
 			}
+			return
 		} else {
 			dangerousActivations[i.ChannelID] = activationRequest{
 				when:     time.Now(),
 				byUser:   i.Member.User.ID,
 				roomname: room.RoomName,
 			}
-			s.ChannelMessageSendComplex(i.ChannelID, &discordgo.MessageSend{
-				Content: "",
-				Embeds: []*discordgo.MessageEmbed{
-					{
-						Title:       "Warning!",
-						Description: "This action will activate **all** chambers in the room!\nRespond with `Yes I am sure, do as I say!` in this channel within 15 seconds to confirm",
-						Color:       0xef2929,
+			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Embeds: []*discordgo.MessageEmbed{
+						{
+							Title:       "Warning!",
+							Description: "This action will activate **all** chambers in the room!\nRespond with `Yes I am sure, do as I say!` in this channel within 15 seconds to confirm",
+							Color:       0xef2929,
+						},
 					},
 				},
 			})
+			if err != nil {
+				log.Print(err)
+			}
+			return
 		}
 	} else {
 		for index, c := range room.Chambers {
