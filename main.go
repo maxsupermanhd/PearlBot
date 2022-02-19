@@ -166,14 +166,14 @@ func main() {
 	log.Print("Connected to Discord.")
 	if config.ReInitCommands {
 		log.Print("Removing old commands...")
-		cmds, err := dg.ApplicationCommands("859904924699721769", "")
+		cmds, err := dg.ApplicationCommands(config.ApplicationID, "")
 		if err != nil {
 			log.Fatalf("Failed to get app commands: %s", err.Error())
 		}
 		for _, j := range cmds {
 			dg.ApplicationCommandDelete(j.ApplicationID, "", j.ID)
 		}
-		cmds, err = dg.ApplicationCommands("859904924699721769", config.GuildID)
+		cmds, err = dg.ApplicationCommands(config.ApplicationID, config.GuildID)
 		if err != nil {
 			log.Fatalf("Failed to get app commands: %s", err.Error())
 		}
