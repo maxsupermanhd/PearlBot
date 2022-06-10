@@ -265,36 +265,37 @@ func commandRooms(s *discordgo.Session, i *discordgo.InteractionCreate) {
 }
 
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Content != "Yes I am sure, do as I say!" {
-		return
-	}
-	if t, ok := dangerousActivations[m.ChannelID]; ok {
-		if t.byUser == m.Author.ID {
-			if time.Until(t.when) < -15*time.Second {
-				s.ChannelMessageSend(m.ChannelID, "You did not confirmed activation fast enough.")
-				delete(dangerousActivations, m.ChannelID)
-				return
-			} else {
-				rooms := findRoomsByChannelID(m.ChannelID)
-				roomfound := false
-				var room PearlRoom
-				for _, r := range rooms {
-					if r.RoomName == t.roomname {
-						room = r
-						roomfound = true
-					}
-				}
-				if !roomfound {
-					s.ChannelMessageSend(m.ChannelID, "Room not found?!")
-					delete(dangerousActivations, m.ChannelID)
-					return
-				}
-				activateRoom(s, room, -1)
-			}
-		} else {
-			return
-		}
-	}
+	// if m.Content != "Yes I am sure, do as I say!" {
+	// 	return
+	// }
+	// if t, ok := dangerousActivations[m.ChannelID]; ok {
+	// 	if t.byUser == m.Author.ID {
+	// 		if time.Until(t.when) < -15*time.Second {
+	// 			s.ChannelMessageSend(m.ChannelID, "You did not confirmed activation fast enough.")
+	// 			delete(dangerousActivations, m.ChannelID)
+	// 			return
+	// 		} else {
+	// 			rooms := findRoomsByChannelID(m.ChannelID)
+	// 			roomfound := false
+	// 			var room PearlRoom
+	// 			for _, r := range rooms {
+	// 				if r.RoomName == t.roomname {
+	// 					room = r
+	// 					roomfound = true
+	// 				}
+	// 			}
+	// 			if !roomfound {
+	// 				s.ChannelMessageSend(m.ChannelID, "Room not found?!")
+	// 				delete(dangerousActivations, m.ChannelID)
+	// 				return
+	// 			}
+
+	// 			// activateRoom(s, i, room, -1)
+	// 		}
+	// 	} else {
+	// 		return
+	// 	}
+	// }
 }
 
 func commandActivate(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -374,48 +375,48 @@ func commandActivate(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			return
 		}
 	}
-	activateRoom(s, room, chamberindex)
+	activateRoom(s, i, room, chamberindex)
 }
 
-func activateRoom(s *discordgo.Session, room PearlRoom, cid int) {
-	s.ChannelMessageSend(room.DiscordChannel, fmt.Sprintf("Activating chamber %d in room %s...", cid, room.RoomName))
+func activateRoom(s *discordgo.Session, i *discordgo.InteractionCreate, room PearlRoom, cid int) {
+	iTextResponse(s, i, fmt.Sprintf("Activating chamber %d in room %s...", cid, room.RoomName))
 	cache, err := getCredentialsCache(room.AccountCredentialsName)
 	if err != nil {
-		s.ChannelMessageSend(room.DiscordChannel, "Failed to load credentials: "+err.Error())
+		iTextResponse(s, i, "Failed to load credentials: "+err.Error())
 		return
 	}
 	if isDateExpired(cache.Minecraft.ExpiresAfter) {
-		s.ChannelMessageSend(room.DiscordChannel, "Minecraft token expired, refreshing everything...")
+		iTextResponse(s, i, "Minecraft token expired, refreshing everything...")
 		err := GMMAuth.CheckRefreshMS(&cache.Microsoft, config.MicrosoftCID)
 		if err != nil {
-			s.ChannelMessageSend(room.DiscordChannel, "Failed to refresh Microsoft credentials: "+err.Error())
+			iTextResponse(s, i, "Failed to refresh Microsoft credentials: "+err.Error())
 			return
 		}
 		XBLt, err := GMMAuth.AuthXBL(cache.Microsoft.AccessToken)
 		if err != nil {
-			s.ChannelMessageSend(room.DiscordChannel, "Failed to refresh credentials, unable to get XBL token: "+err.Error())
+			iTextResponse(s, i, "Failed to refresh credentials, unable to get XBL token: "+err.Error())
 			return
 		}
 		XSTSt, err := GMMAuth.AuthXSTS(XBLt)
 		if err != nil {
-			s.ChannelMessageSend(room.DiscordChannel, "Failed to refresh credentials, unable to get XSTS token: "+err.Error())
+			iTextResponse(s, i, "Failed to refresh credentials, unable to get XSTS token: "+err.Error())
 			return
 		}
 		cache.Minecraft, err = GMMAuth.AuthMC(XSTSt)
 		if err != nil {
-			s.ChannelMessageSend(room.DiscordChannel, "Failed to refresh credentials, unable to get MC token: "+err.Error())
+			iTextResponse(s, i, "Failed to refresh credentials, unable to get MC token: "+err.Error())
 			return
 		}
 		profile, err := GMMAuth.GetMCprofile(cache.Minecraft.Token)
 		if err != nil {
-			s.ChannelMessageSend(room.DiscordChannel, "Unable to get MC profile: "+err.Error())
+			iTextResponse(s, i, "Unable to get MC profile: "+err.Error())
 			return
 		}
 		cache.Username = profile.Name
 		cache.UUID = profile.UUID
 		err = writeCredentialsCache(room.AccountCredentialsName, cache)
 		if err != nil {
-			s.ChannelMessageSend(room.DiscordChannel, "Unable to write credentials cache: "+err.Error())
+			iTextResponse(s, i, "Unable to write credentials cache: "+err.Error())
 			return
 		}
 	}
