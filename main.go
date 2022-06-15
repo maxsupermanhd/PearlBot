@@ -156,6 +156,9 @@ func main() {
 		return
 	}
 	dg.AddHandler(messageCreate)
+	dg.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
+		log.Printf("Logged in as: %v#%v", s.State.User.Username, s.State.User.Discriminator)
+	})
 	dg.Identify.Intents = discordgo.IntentsGuildMessages
 	err = dg.Open()
 	if err != nil {
@@ -163,44 +166,18 @@ func main() {
 		return
 	}
 	defer dg.Close()
-	log.Print("Connected to Discord.")
-	if config.ReInitCommands {
-		log.Print("Removing old commands...")
-		cmds, err := dg.ApplicationCommands(config.ApplicationID, "")
+	log.Print("Registering commands...")
+	dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if h, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
+			h(s, i)
+		}
+	})
+	for _, v := range commands {
+		log.Printf("Registering command [%s]...", v.Name)
+		_, err := dg.ApplicationCommandCreate(dg.State.User.ID, config.GuildID, v)
 		if err != nil {
-			log.Fatalf("Failed to get app commands: %s", err.Error())
+			log.Panicf("Cannot create '%v' command: %v", v.Name, err)
 		}
-		for _, j := range cmds {
-			dg.ApplicationCommandDelete(j.ApplicationID, "", j.ID)
-		}
-		cmds, err = dg.ApplicationCommands(config.ApplicationID, config.GuildID)
-		if err != nil {
-			log.Fatalf("Failed to get app commands: %s", err.Error())
-		}
-		for _, j := range cmds {
-			err := dg.ApplicationCommandDelete(j.ApplicationID, config.GuildID, j.ID)
-			if err != nil {
-				log.Printf("Failed to delete old command %s", j.ID)
-			}
-		}
-		log.Print("Registering new commands...")
-		dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			if h, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
-				h(s, i)
-			}
-		})
-		for _, v := range commands {
-			_, err := dg.ApplicationCommandCreate(dg.State.User.ID, config.GuildID, v)
-			if err != nil {
-				log.Panicf("Cannot create '%v' command: %v", v.Name, err)
-			}
-		}
-	} else {
-		dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			if h, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
-				h(s, i)
-			}
-		})
 	}
 	log.Println("Bot is now running. Send SIGINT or SIGTERM to exit.")
 	sc := make(chan os.Signal, 1)

@@ -31,10 +31,8 @@ type BotConfiguration struct {
 	AccountsCredentialCachePath string      `json:"accountsCredentialsCachePath"`
 	MicrosoftCID                string      `json:"microsoftCID"`
 	GuildID                     string      `json:"guildID"`
-	ApplicationID               string      `json:"applicationID"`
 	StatusQueryRegion1          string      `json:"statusRegion1"`
 	StatusQueryRegion2          string      `json:"statusRegion2"`
-	ReInitCommands              bool        `json:"reinitCommands"`
 }
 
 var (
